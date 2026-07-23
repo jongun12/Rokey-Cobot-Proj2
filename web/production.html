@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>발주·입고·작업관리</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #f5f6fa; display: flex; min-height: 100vh; }
+
+    /* ── 사이드바 ── */
+    .sidebar {
+      width: 110px; background: #1a3a2a; display: flex; flex-direction: column;
+      align-items: center; padding: 0 0 1rem; min-height: 100vh; flex-shrink: 0;
+    }
+    .sidebar-logo {
+      width: 100%; background: #16301f; padding: 1rem 0.5rem;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      border-bottom: 1px solid #2a5c3a;
+    }
+    .sidebar-logo span { color: #fff; font-size: 12px; font-weight: 700; line-height: 1.3; text-align: center; }
+    .sidebar-logo .leaf { font-size: 18px; }
+    .sidebar-nav { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 1rem 0; width: 100%; flex: 1; }
+    .nav-item {
+      width: 80px; padding: 10px 8px; border-radius: 10px; display: flex; flex-direction: column;
+      align-items: center; gap: 4px; cursor: pointer; text-decoration: none; transition: background 0.15s;
+    }
+    .nav-item.active { background: #2d6a4f; }
+    .nav-item:hover:not(.active) { background: #24503b; }
+    .nav-item .icon { font-size: 20px; }
+    .nav-item span { color: #b7d9c5; font-size: 10px; font-weight: 500; text-align: center; line-height: 1.3; }
+    .nav-item.active span { color: #fff; }
+    .sidebar-bottom { margin-top: auto; }
+    .logout-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      color: #b7d9c5; font-size: 10px; cursor: pointer; padding: 8px;
+      background: none; border: none; font-family: inherit;
+    }
+    .logout-btn .icon { font-size: 18px; }
+
+    /* ── 메인 ── */
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+    .topbar {
+      background: white; border-bottom: 1px solid #e8eaf0; padding: 0 1.5rem;
+      height: 56px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 0; }
+    .topbar-brand { color: #888; font-size: 13px; padding-right: 16px; border-right: 1px solid #e0e0e0; }
+    .topbar-page { color: #1a3a2a; font-size: 13px; font-weight: 600; padding-left: 16px; border-bottom: 2px solid #2d6a4f; padding-bottom: 2px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-bell { font-size: 18px; position: relative; cursor: pointer; }
+    .bell-dot { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; background: #e74c3c; border-radius: 50%; }
+    .topbar-user { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .user-avatar { width: 30px; height: 30px; border-radius: 50%; background: #2d6a4f; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; }
+    .user-name { font-size: 13px; color: #333; font-weight: 500; }
+
+    .sidebar-logo { cursor: pointer; transition: opacity 0.15s; }
+    .sidebar-logo:hover { opacity: 0.8; }
+
+    .content { padding: 1.5rem; flex: 1; overflow-y: auto; }
+
+    .page-header { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+    .page-subtitle { font-size: 13px; color: #888; margin-bottom: 1.5rem; }
+
+    /* 요약 카드 */
+    .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .summary-card { background: white; border-radius: 14px; padding: 1.2rem 1.4rem; display: flex; align-items: center; gap: 1rem; box-shadow: 0 1px 6px rgba(0,0,0,0.05); }
+    .card-icon { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
+    .card-icon.green { background: #e8f5ee; }
+    .card-icon.orange { background: #fff4e6; }
+    .card-icon.blue { background: #eef2ff; }
+    .card-info .card-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+    .card-info .card-count { font-size: 24px; font-weight: 700; color: #1a1a2e; }
+    .card-info .card-count span { font-size: 14px; font-weight: 500; color: #555; margin-left: 2px; }
+    .card-info .card-sub { font-size: 11px; color: #aaa; margin-top: 2px; }
+
+    /* 섹션 */
+    .section-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem; }
+    .section-box { background: white; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); overflow: hidden; }
+    .section-head { padding: 1rem 1.2rem 0.8rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f0f0f5; }
+    .section-head-title { font-size: 14px; font-weight: 600; color: #222; display: flex; align-items: center; gap: 6px; }
+    .section-head-link { font-size: 12px; color: #2d6a4f; font-weight: 500; cursor: pointer; }
+    .section-head-link:hover { text-decoration: underline; }
+    .table-scroll { max-height: 320px; overflow-y: auto; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead { position: sticky; top: 0; z-index: 1; }
+    th { background: #f8f9fb; padding: 9px 12px; font-size: 12px; font-weight: 600; color: #666; text-align: left; border-bottom: 1px solid #eee; }
+    td { padding: 9px 12px; font-size: 12px; color: #333; border-bottom: 1px solid #f5f5f5; }
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #f8fbf9; }
+
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+    .badge-wait { background: #fff3cd; color: #856404; }
+    .badge-done { background: #d4edda; color: #1a7a40; }
+    .badge-work { background: #dbeafe; color: #1d4ed8; }
+    .badge-complete { background: #d4edda; color: #1a7a40; }
+
+    .complete-btn { background: #2d6a4f; color: white; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+    .complete-btn:hover { background: #1a5c3e; }
+    .cancel-btn { background: #fde8e8; color: #c0392b; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; margin-left: 4px; font-family: inherit; }
+    .cancel-btn:hover { background: #f5c6cb; }
+    .work-btn { background: #2d6a4f; color: white; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+    .work-btn:hover { background: #1a5c3e; }
+    .log-btn { background: #e8f5ee; color: #1a7a40; border: 1px solid #b7d9c5; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+    .log-btn:hover { background: #d4edda; }
+
+    .empty-state { text-align: center; padding: 2.5rem 1rem; color: #aaa; }
+    .empty-state .empty-icon { font-size: 36px; margin-bottom: 8px; opacity: 0.5; }
+    .empty-state p { font-size: 13px; }
+    .empty { text-align: center; padding: 1.5rem; color: #aaa; font-size: 13px; }
+
+    .work-full { background: white; border-radius: 14px; box-shadow: 0 1px 6px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 1.5rem; }
+    .work-head { padding: 1rem 1.2rem 0.8rem; border-bottom: 1px solid #f0f0f5; }
+    .work-head-title { font-size: 14px; font-weight: 600; color: #222; display: flex; align-items: center; gap: 6px; }
+    .work-scroll { max-height: 320px; overflow-y: auto; }
+
+    .loading { text-align: center; padding: 2rem; color: #aaa; font-size: 13px; }
+
+    .footer { text-align: center; padding: 1rem; font-size: 11px; color: #bbb; }
+
+    /* 모달 */
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.45); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+    .modal-box { background: white; border-radius: 16px; padding: 1.5rem; width: 500px; max-height: 80vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.15); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .modal-title { font-size: 15px; font-weight: 700; color: #1a1a2e; }
+    .modal-close { border: none; background: none; font-size: 20px; cursor: pointer; color: #888; }
+    .modal-close:hover { color: #333; }
+    .modal-input-wrap { margin-bottom: 1rem; }
+    .modal-input-wrap textarea { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px; font-size: 13px; height: 70px; resize: none; font-family: inherit; }
+    .modal-input-wrap textarea:focus { outline: none; border-color: #2d6a4f; }
+    .modal-add-btn { margin-top: 8px; background: #2d6a4f; color: white; border: none; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: inherit; }
+    .modal-add-btn:hover { background: #1a5c3e; }
+    .log-item { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f0f0f0; padding: 10px 0; }
+    .log-item:last-child { border-bottom: none; }
+    .log-time { font-size: 11px; color: #aaa; }
+    .log-text { font-size: 13px; color: #333; margin-top: 3px; }
+    .log-delete-btn { background: #fde8e8; color: #c0392b; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; flex-shrink: 0; margin-left: 10px; font-family: inherit; }
+    .log-delete-btn:hover { background: #f5c6cb; }
+    .log-empty { color: #aaa; font-size: 13px; text-align: center; padding: 1.5rem 0; }
+  </style>
+</head>
+<body>
+
+  <!-- 사이드바 -->
+  <div class="sidebar">
+    <a class="sidebar-logo" href="admin.html" style="text-decoration:none;">
+      <img src="https://resonant-violet-tfxsbq9wle.edgeone.app/%EB%A1%9C%EA%B3%A03%20%EB%88%84%EB%81%BC.png"
+           alt="클린토피아" style="height:50px; width:auto; mix-blend-mode:screen;">
+    </a>
+    <nav class="sidebar-nav">
+      <a class="nav-item active" href="#">
+        <span class="icon">📋</span>
+        <span>발주·입고·<br>작업관리</span>
+      </a>
+      <a class="nav-item" href="gwanri.html">
+        <span class="icon">📁</span>
+        <span>관리</span>
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <button class="logout-btn">
+        <span class="icon">🚪</span>
+        <span style="color:#b7d9c5;font-size:10px;">로그아웃</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- 메인 -->
+  <div class="main">
+
+    <div class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-brand">
+          <img src="https://resonant-violet-tfxsbq9wle.edgeone.app/%EB%A1%9C%EA%B3%A03%20%EB%88%84%EB%81%BC.png"
+               alt="클린토피아" style="height:28px; width:auto; vertical-align:middle; mix-blend-mode:multiply;">
+          클린토피아
+        </span>
+        <span class="topbar-page">&nbsp;&nbsp;발주·입고·작업관리</span>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-bell">🔔<div class="bell-dot"></div></div>
+        <div class="topbar-user">
+          <div class="user-avatar">관</div>
+          <span class="user-name">관리자 ▾</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="content">
+      <div class="page-header">
+        <div class="page-title">발주·입고·작업관리</div>
+      </div>
+      <div class="page-subtitle">발주, 입고, 작업현황을 한눈에 확인하세요.</div>
+
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="card-icon green">🧑‍💼</div>
+          <div class="card-info">
+            <div class="card-label">발주 목록</div>
+            <div class="card-count" id="count-balju">0 <span>건</span></div>
+            <div class="card-sub">전체 발주 건수</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="card-icon orange">🛍️</div>
+          <div class="card-info">
+            <div class="card-label">입고 목록</div>
+            <div class="card-count" id="count-ingo">0 <span>건</span></div>
+            <div class="card-sub">오늘 입고 건수</div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="card-icon blue">🔧</div>
+          <div class="card-info">
+            <div class="card-label">작업현황</div>
+            <div class="card-count" id="count-work">0 <span>건</span></div>
+            <div class="card-sub">진행 중 작업</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-row">
+        <div class="section-box">
+          <div class="section-head">
+            <div class="section-head-title">📋 발주 목록</div>
+            <span class="section-head-link">전체 보기 ›</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>#</th><th>이름</th><th>주소</th><th>전화번호</th><th>신청시간</th><th>상태</th></tr>
+              </thead>
+              <tbody id="balju-tbody"><tr><td colspan="6" class="loading">불러오는 중...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="section-box">
+          <div class="section-head">
+            <div class="section-head-title">📦 입고 목록</div>
+            <span class="section-head-link">전체 보기 ›</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>#</th><th>이름</th><th>주소</th><th>전화번호</th><th>신청시간</th><th>작업지시</th></tr>
+              </thead>
+              <tbody id="ingo-tbody">
+                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📦</div><p>완료된 발주가 없어요</p></div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="work-full">
+        <div class="work-head">
+          <div class="work-head-title">🔧 작업현황</div>
+        </div>
+        <div class="work-scroll">
+          <table>
+            <thead>
+              <tr><th>#</th><th>이름</th><th>주소</th><th>전화번호</th><th>작업지시 시간</th><th>상태</th><th>작업내역</th></tr>
+            </thead>
+            <tbody id="work-tbody">
+              <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🔧</div><p>작업지시된 항목이 없어요</p></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="footer">© 2024 우리집 분리수거. All rights reserved.</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore, collection, doc, updateDoc, deleteDoc, setDoc,
+      onSnapshot, query, orderBy, getDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAX8v-CpJc4tuV2BoBFARWJ7L3kaYRJT1U",
+      authDomain: "rokey-2.firebaseapp.com",
+      projectId: "rokey-2",
+      storageBucket: "rokey-2.firebasestorage.app",
+      messagingSenderId: "632237117523",
+      appId: "1:632237117523:web:eb4bd91a5e4e0be79f76a6",
+      measurementId: "G-SGKLQ50W2M"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const conditionRef = doc(db, "start", "condition");
+
+    function now() {
+      return new Date().toLocaleString('ko-KR', { hour12: false }).slice(0, 16);
+    }
+
+    onSnapshot(conditionRef, async (snap) => {
+      if (!snap.exists()) return;
+      const condition = snap.data().condition;
+
+      if (condition === 0) {
+        const finishQuery = query(collection(db, "finish"));
+        const finishSnap = await new Promise(resolve => {
+          const unsub = onSnapshot(finishQuery, (s) => { unsub(); resolve(s); });
+        });
+
+        const updates = [];
+        finishSnap.docs.forEach(d => {
+          if (d.data().status === 'working') {
+            updates.push(updateDoc(doc(db, "finish", d.id), {
+              status: 'completed',
+              completedTime: now()
+            }));
+          }
+        });
+
+        await Promise.all(updates);
+        await updateDoc(conditionRef, { condition: 2 });
+      }
+    });
+
+    const ordersQuery = query(collection(db, "orders"), orderBy("time"));
+    onSnapshot(ordersQuery, (snapshot) => {
+      const orders = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+      renderBalju(orders);
+      document.getElementById('count-balju').innerHTML = `${orders.length} <span>건</span>`;
+    });
+
+    const finishQuery = query(collection(db, "finish"), orderBy("time"));
+    onSnapshot(finishQuery, (snapshot) => {
+      const finishList = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+      renderIngo(finishList);
+      renderWork(finishList);
+      document.getElementById('count-ingo').innerHTML = `${finishList.length} <span>건</span>`;
+      document.getElementById('count-work').innerHTML = `${finishList.filter(o => o.status === 'working').length} <span>건</span>`;
+    });
+
+    async function complete(docId) {
+      const ref = doc(db, "orders", docId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      await setDoc(doc(db, "finish", docId), { ...data, status: "done" });
+      await deleteDoc(ref);
+    }
+
+    async function cancelToOrders(docId) {
+      const ref = doc(db, "finish", docId);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) return;
+      const data = snap.data();
+      await setDoc(doc(db, "orders", docId), {
+        ...data,
+        status: "pending",
+        workTime: null,
+        workLogs: []
+      });
+      await deleteDoc(ref);
+    }
+
+    async function cancelWork(docId) {
+      await updateDoc(doc(db, "finish", docId), { status: "done", workTime: null });
+      await updateDoc(conditionRef, { condition: 2 });
+    }
+
+    async function cancelCompleted(docId) {
+      await updateDoc(doc(db, "finish", docId), {
+        status: "done",
+        workTime: null,
+        completedTime: null
+      });
+      await updateDoc(conditionRef, { condition: 2 });
+    }
+
+    async function startWork(docId) {
+      await updateDoc(doc(db, "finish", docId), { status: "working", workTime: now() });
+      await updateDoc(conditionRef, { condition: 1 });
+      document.querySelector('.work-full').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function renderBalju(orders) {
+      const tbody = document.getElementById('balju-tbody');
+      tbody.innerHTML = '';
+      if (orders.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📋</div><p>발주 내역이 없어요</p></div></td></tr>';
+        return;
+      }
+      orders.forEach((item, i) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${String(i + 1).padStart(3, '0')}</td>
+            <td>${item.name}</td>
+            <td>${item.address}</td>
+            <td>${item.phone}</td>
+            <td>${item.time}</td>
+            <td>
+              <button class="complete-btn" onclick="completeOrder('${item.docId}')">완료처리</button>
+            </td>
+          </tr>`;
+      });
+    }
+
+    function renderIngo(finishList) {
+      const tbody = document.getElementById('ingo-tbody');
+      tbody.innerHTML = '';
+      if (finishList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📦</div><p>완료된 발주가 없어요</p></div></td></tr>';
+        return;
+      }
+      finishList.forEach((item, i) => {
+        const isWorking = item.status === 'working';
+        const isCompleted = item.status === 'completed';
+        tbody.innerHTML += `
+          <tr>
+            <td>${String(i + 1).padStart(3, '0')}</td>
+            <td>${item.name}</td>
+            <td>${item.address}</td>
+            <td>${item.phone}</td>
+            <td>${item.time}</td>
+            <td>
+              ${isCompleted
+                ? '<span class="badge badge-complete">✅ 작업완료</span>'
+                : isWorking
+                  ? '<span class="badge badge-work">작업중</span>'
+                  : `<button class="work-btn" onclick="startWorkOrder('${item.docId}')">작업지시</button>`}
+              ${!isCompleted ? `<button class="cancel-btn" onclick="cancelOrder('${item.docId}')">취소</button>` : ''}
+            </td>
+          </tr>`;
+      });
+    }
+
+    function renderWork(finishList) {
+      const tbody = document.getElementById('work-tbody');
+      const workList = finishList.filter(o => o.status === 'working' || o.status === 'completed');
+      tbody.innerHTML = '';
+      if (workList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">🔧</div><p>작업지시된 항목이 없어요</p></div></td></tr>';
+        return;
+      }
+      workList.forEach((item, i) => {
+        const isCompleted = item.status === 'completed';
+        tbody.innerHTML += `
+          <tr>
+            <td>${String(i + 1).padStart(3, '0')}</td>
+            <td>${item.name}</td>
+            <td>${item.address}</td>
+            <td>${item.phone}</td>
+            <td>${item.workTime || '-'}</td>
+            <td>
+              ${isCompleted
+                ? `<span class="badge badge-complete">✅ 작업완료</span>
+                   <button class="cancel-btn" onclick="cancelCompleted('${item.docId}')">취소</button>`
+                : `<span class="badge badge-work">작업중</span>
+                   <button class="cancel-btn" onclick="cancelWork('${item.docId}')">취소</button>`}
+            </td>
+            <td><button class="log-btn" onclick="openWorkLog('${item.docId}', '${item.name}')">내역보기</button></td>
+          </tr>`;
+      });
+    }
+
+    window.completeOrder = complete;
+    window.cancelOrder = cancelToOrders;
+    window.cancelWork = cancelWork;
+    window.cancelCompleted = cancelCompleted;
+    window.startWorkOrder = startWork;
+
+    window.openWorkLog = async function(docId, name) {
+      const snap = await getDoc(doc(db, "finish", docId));
+      const logs = snap.data()?.workLogs || [];
+
+      const modal = document.createElement('div');
+      modal.className = 'modal-overlay';
+      modal.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-header">
+            <span class="modal-title">🔧 ${name} 작업내역</span>
+            <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+          </div>
+          <div class="modal-input-wrap">
+            <textarea id="log-input" placeholder="작업 내용을 입력하세요..."></textarea>
+            <button class="modal-add-btn" onclick="addLog('${docId}', '${name}')">추가</button>
+          </div>
+          <div id="log-list">
+            ${logs.length === 0
+              ? '<p class="log-empty">작업내역이 없어요</p>'
+              : logs.map((l, i) => `
+                <div class="log-item">
+                  <div>
+                    <div class="log-time">${l.time}</div>
+                    <div class="log-text">${l.text}</div>
+                  </div>
+                  <button class="log-delete-btn" onclick="deleteLog('${docId}', ${i}, '${name}')">삭제</button>
+                </div>`).join('')}
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    };
+
+    window.addLog = async function(docId, name) {
+      const input = document.getElementById('log-input');
+      const text = input.value.trim();
+      if (!text) return;
+      const ref = doc(db, "finish", docId);
+      const snap = await getDoc(ref);
+      const logs = snap.data()?.workLogs || [];
+      logs.push({ text, time: now() });
+      await updateDoc(ref, { workLogs: logs });
+      document.querySelector('.modal-overlay').remove();
+      openWorkLog(docId, name);
+    };
+
+    window.deleteLog = async function(docId, index, name) {
+      const ref = doc(db, "finish", docId);
+      const snap = await getDoc(ref);
+      const logs = snap.data()?.workLogs || [];
+      logs.splice(index, 1);
+      await updateDoc(ref, { workLogs: logs });
+      document.querySelector('.modal-overlay').remove();
+      openWorkLog(docId, name);
+    };
+  </script>
+
+</body>
+</html>

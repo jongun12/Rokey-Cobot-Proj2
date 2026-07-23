@@ -1,6 +1,7 @@
 *.pt
 mobileclip2_b.ts
 serviceAccountKey.json
+.vscode/
 # Created by https://www.toptal.com/developers/gitignore/api/ros2,python
 # Edit at https://www.toptal.com/developers/gitignore?templates=ros2,python
 

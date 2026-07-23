@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>로그인</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: #f0f4ff;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── 왼쪽 패널 ── */
+    .left-panel {
+      width: 42%;
+      background: linear-gradient(160deg, #eaf6ec 0%, #c8ebd0 60%, #a8ddb5 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center; /* ★ 수정: 세로 가운데 정렬 */
+      padding: 3rem 3rem 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 배경 구름 장식 */
+    .cloud {
+      position: absolute;
+      background: rgba(255,255,255,0.55);
+      border-radius: 50%;
+    }
+    .cloud-1 { width: 180px; height: 80px; top: 60px; right: -30px; border-radius: 50px; }
+    .cloud-2 { width: 120px; height: 55px; top: 100px; right: 80px; border-radius: 40px; }
+
+    .brand-logo {
+      width: 56px; height: 56px; border-radius: 14px;
+      background: #56b870;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; margin-bottom: 1.4rem;
+      box-shadow: 0 4px 14px rgba(86,184,112,0.35);
+    }
+    .brand-title { font-size: 38px; font-weight: 700; color: #1a3a2a; margin-bottom: 0.6rem; }
+    .brand-desc { font-size: 16px; color: #3a6a4a; line-height: 1.7; margin-bottom: 2.5rem; }
+
+    .feature-list { display: flex; flex-direction: column; gap: 1.1rem; }
+    .feature-item { display: flex; align-items: center; gap: 14px; }
+    .feature-icon {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: rgba(255,255,255,0.7);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; color: #56b870; flex-shrink: 0;
+    }
+    .feature-text .ft { font-size: 16px; font-weight: 600; color: #1a3a2a; }
+    .feature-text .fs { font-size: 14px; color: #4a7a5a; margin-top: 2px; }
+
+    /* 하단 일러스트 */
+    .illustration {
+      margin-top: auto;
+      width: calc(100% + 6rem);
+      margin-left: -3rem;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      height: 220px;
+      position: relative;
+    }
+    .ground {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 100px;
+      background: linear-gradient(180deg, #7ec89a 0%, #56b870 100%);
+      border-radius: 60% 60% 0 0 / 30px 30px 0 0;
+    }
+    .tree { position: absolute; bottom: 80px; }
+    .tree-trunk { width: 10px; height: 35px; background: #8B6914; margin: 0 auto; border-radius: 3px; }
+    .tree-top { width: 50px; height: 65px; background: #3a9e5f; border-radius: 50% 50% 40% 40%; margin: 0 auto -5px; }
+    .tree-top-2 { width: 38px; height: 50px; background: #4ab870; border-radius: 50% 50% 40% 40%; margin: 0 auto -8px; }
+    .tree-1 { left: 30px; }
+    .tree-2 { right: 60px; }
+    .tree-2 .tree-top { width: 42px; height: 55px; }
+
+    .bin-wrap { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); }
+    .bin { width: 70px; height: 85px; background: #5b8dd9; border-radius: 6px 6px 10px 10px; position: relative; }
+    .bin::before { content:''; position: absolute; top: -10px; left: -5px; right: -5px; height: 12px; background: #4a7bc8; border-radius: 4px; }
+    .bin-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: white; font-size: 28px; }
+    .bag { width: 28px; height: 38px; background: #6c6cda; border-radius: 4px 4px 10px 10px; position: absolute; bottom: 88px; left: 18px; }
+    .bag::before { content:''; position: absolute; top: -6px; left: 50%; transform: translateX(-50%); width: 10px; height: 8px; background: #5555c8; border-radius: 50% 50% 0 0; }
+
+    /* ── 오른쪽 패널 ── */
+    .right-panel {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f0f4ff;
+      padding: 2rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 2.5rem 2.2rem;
+      width: 360px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    .lock-icon {
+      width: 64px; height: 64px; border-radius: 50%;
+      background: #f0eeff;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.2rem;
+      font-size: 28px; color: #7c6fcd;
+    }
+
+    h2 { font-size: 22px; font-weight: 700; color: #1a1a2e; margin-bottom: 0.3rem; }
+    p { font-size: 13px; color: #888; margin-bottom: 1.8rem; }
+
+    label {
+      font-size: 13px; color: #555; display: block;
+      margin-bottom: 6px; text-align: left; font-weight: 500;
+    }
+
+    .input-wrap {
+      position: relative; margin-bottom: 1rem;
+    }
+    .input-wrap i {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      color: #bbb; font-size: 16px;
+    }
+    .input-wrap .eye-btn {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; color: #bbb;
+      width: auto; height: auto; font-size: 16px; padding: 0;
+    }
+
+    input {
+      width: 100%; height: 44px;
+      padding: 0 40px 0 38px;
+      border: 1.5px solid #e8eaf0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #333;
+      transition: border-color 0.2s;
+      margin-bottom: 0;
+    }
+    input:focus { outline: none; border-color: #56b870; }
+    input::placeholder { color: #ccc; }
+
+    .bottom-row {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1.2rem; margin-top: 0.2rem;
+    }
+    .save-id { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #666; cursor: pointer; }
+    .save-id input[type=checkbox] { width: 14px; height: 14px; margin-bottom: 0; border: 1.5px solid #ddd; border-radius: 3px; padding: 0; }
+    .find-pw { font-size: 13px; color: #56b870; font-weight: 500; cursor: pointer; text-decoration: none; }
+    .find-pw:hover { text-decoration: underline; }
+
+    button {
+      width: 100%; height: 46px;
+      background: #56b870;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    button:hover { background: #3fa05a; }
+
+    .error { color: #e74c3c; font-size: 13px; margin-top: 10px; display: none; text-align: left; }
+  </style>
+</head>
+<body>
+
+  <!-- 왼쪽 패널 -->
+  <div class="left-panel">
+    <div class="cloud cloud-1"></div>
+    <div class="cloud cloud-2"></div>
+
+    <div class="brand-logo" style="background:transparent; box-shadow:none;">
+      <img src="https://resonant-violet-tfxsbq9wle.edgeone.app/%EB%A1%9C%EA%B3%A03%20%EB%88%84%EB%81%BC.png" 
+           alt="클린토피아" style="height: 86px; width:auto; mix-blend-mode: multiply;">
+    </div>
+    <div class="brand-title">클린 토피아</div>
+    <div class="brand-desc">효율적인 쓰레기 수거 관리와<br>스마트한 분리수거 서비스를 제공합니다.</div>
+
+    <div class="feature-list">
+      <div class="feature-item">
+        <div class="feature-icon"><i class="ti ti-calendar-stats"></i></div>
+        <div class="feature-text">
+          <div class="ft">간편한 관리</div>
+          <div class="fs">발주, 입고, 작업 현황을 한눈에 확인</div>
+        </div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon"><i class="ti ti-chart-bar"></i></div>
+        <div class="feature-text">
+          <div class="ft">실시간 모니터링</div>
+          <div class="fs">CCTV 및 수거 현황 실시간 확인</div>
+        </div>
+      </div>
+      <div class="feature-item">
+        <div class="feature-icon"><i class="ti ti-shield-check"></i></div>
+        <div class="feature-text">
+          <div class="ft">안전한 시스템</div>
+          <div class="fs">안정적이고 신뢰할 수 있는 서비스</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 하단 일러스트 -->
+    <div class="illustration">
+      <div class="ground"></div>
+      <div class="tree tree-1">
+        <div class="tree-top-2"></div>
+        <div class="tree-top"></div>
+        <div class="tree-trunk"></div>
+      </div>
+      <div class="tree tree-2">
+        <div class="tree-top-2"></div>
+        <div class="tree-top"></div>
+        <div class="tree-trunk"></div>
+      </div>
+      <div class="bin-wrap">
+        <div class="bag"></div>
+        <div class="bin">
+          <span class="bin-icon">♻️</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 오른쪽 패널 (기존 카드 구조 유지) -->
+  <div class="right-panel">
+    <div class="card">
+      <div class="lock-icon">🔐</div>
+      <h2>로그인</h2>
+      <p>관리자 계정으로 로그인하세요</p>
+
+      <label>아이디</label>
+      <div class="input-wrap">
+        <i class="ti ti-user"></i>
+        <input type="text" id="username" placeholder="아이디 입력" />
+      </div>
+
+      <label>비밀번호</label>
+      <div class="input-wrap">
+        <i class="ti ti-lock"></i>
+        <input type="password" id="password" placeholder="비밀번호 입력" />
+        <button class="eye-btn" type="button" onclick="togglePw(this)">
+          <i class="ti ti-eye-off"></i>
+        </button>
+      </div>
+
+      <div class="bottom-row">
+        <label class="save-id">
+          <input type="checkbox"> 아이디 저장
+        </label>
+        <a class="find-pw" href="#">비밀번호 찾기</a>
+      </div>
+
+      <button onclick="login()">로그인</button>
+      <p class="error" id="error">아이디 또는 비밀번호가 틀렸어요.</p>
+    </div>
+  </div>
+
+  <script>
+    function login() {
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+
+      // 여기서 아이디/비밀번호 설정하세요
+      if (username === 'admin' && password === '1234') {
+        window.location.href = 'admin.html';
+      } else {
+        document.getElementById('error').style.display = 'block';
+      }
+    }
+
+    function togglePw(btn) {
+      const input = btn.closest('.input-wrap').querySelector('input');
+      const icon = btn.querySelector('i');
+      if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'ti ti-eye';
+      } else {
+        input.type = 'password';
+        icon.className = 'ti ti-eye-off';
+      }
+    }
+
+    // 엔터키 로그인
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') login();
+    });
+  </script>
+</body>
+</html>

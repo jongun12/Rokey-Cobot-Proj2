@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>관리</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, updateDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAX8v-CpJc4tuV2BoBFARWJ7L3kaYRJT1U",
+      authDomain: "rokey-2.firebaseapp.com",
+      projectId: "rokey-2",
+      storageBucket: "rokey-2.firebasestorage.app",
+      messagingSenderId: "632237117523",
+      appId: "1:632237117523:web:eb4bd91a5e4e0be79f76a6",
+      measurementId: "G-SGKLQ50W2M"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const docRef = doc(db, "trash_limit", "TvQe4stbmyYjewO8tKck");
+    const cctvRef = doc(db, "CCTV", "CCTV2");
+
+    let trashFull = false;
+    let peopleVal = 0; // 0=없음, 1=감지됨, 2=작업중
+
+    // ── 분리수거통 스냅샷 ──
+    onSnapshot(docRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      const isFull = (data.plastic ?? 0) >= 30 || (data.paper ?? 0) >= 30 || (data.can ?? 0) >= 30;
+      const newFlag = isFull ? 1 : 0;
+
+      if ((data.flag ?? 0) !== newFlag) updateDoc(docRef, { flag: newFlag });
+
+      trashFull = (newFlag === 1);
+
+      const TOTAL = 30;
+      const plastic = Math.round((data.plastic ?? 0) / TOTAL * 1000) / 10;
+      const paper   = Math.round((data.paper   ?? 0) / TOTAL * 1000) / 10;
+      const can     = Math.round((data.can     ?? 0) / TOTAL * 1000) / 10;
+      updateBins(plastic, paper, can);
+      renderNotifications();
+    });
+
+    // ── CCTV 사람 감지 스냅샷 ──
+    onSnapshot(cctvRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+      peopleVal = data.people ?? 0;
+      renderNotifications();
+    });
+
+    function updateBins(plastic, paper, can) {
+      const avg = Math.round((plastic + paper + can) / 3);
+      document.getElementById('donut-val').textContent = avg + '%';
+      setBar('bar-plastic', 'pct-plastic', plastic);
+      setBar('bar-paper',   'pct-paper',   paper);
+      setBar('bar-can',     'pct-can',     can);
+
+      const C = 100;
+      const pPl = (plastic / 100) * C;
+      const pPa = (paper   / 100) * C;
+      const pCa = (can     / 100) * C;
+
+      document.getElementById('donut-plastic').setAttribute('stroke-dasharray', `${pPl/3} ${C - pPl/3}`);
+      document.getElementById('donut-paper').setAttribute('stroke-dasharray',   `${pPa/3} ${C - pPa/3}`);
+      document.getElementById('donut-can').setAttribute('stroke-dasharray',     `${pCa/3} ${C - pCa/3}`);
+      document.getElementById('donut-paper').setAttribute('stroke-dashoffset',  `${-(pPl/3)}`);
+      document.getElementById('donut-can').setAttribute('stroke-dashoffset',    `${-(pPl/3 + pPa/3)}`);
+    }
+
+    function setBar(barId, pctId, val) {
+      document.getElementById(barId).style.width = val + '%';
+      document.getElementById(pctId).textContent  = val + '%';
+    }
+
+    // ── 알림 렌더링 ──
+    function renderNotifications() {
+      const notifList = document.getElementById('notification-list');
+      const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      let html = '';
+
+      if (trashFull) {
+        html += `
+          <div class="log-item" style="border-left-color:#e74c3c; background:#fff0f0;">
+            <span class="log-time">${timeStr}</span>
+            🗑️ <b>쓰레기통이 꽉 찼습니다!</b>
+            <div style="margin-top:6px; font-size:12px; color:#c0392b; font-weight:600;">
+              ⚠️ 쓰레기통을 비워야 합니다!
+            </div>
+          </div>`;
+      }
+
+      // people = 1: 사람 감지됨 → [작업중] 버튼만 표시
+      if (peopleVal === 1) {
+        html += `
+          <div class="log-item" style="border-left-color:#e67e22; background:#fff8f0;">
+            <span class="log-time">${timeStr}</span>
+            🚨 <b>작업공간에 사람이 감지되었습니다!</b>
+            <div class="log-ask">
+              <span>처리 상태를 선택하세요:</span>
+              <button class="btn-working" onclick="setPeopleWorking()">🔧 작업중</button>
+            </div>
+          </div>`;
+      }
+
+      // people = 2: 작업중 → [작업완료] 버튼만 표시
+      if (peopleVal === 2) {
+        html += `
+          <div class="log-item" style="border-left-color:#f39c12; background:#fffbf0;">
+            <span class="log-time">${timeStr}</span>
+            🔧 <b>현재 작업중입니다.</b>
+            <div class="log-ask">
+              <span>작업이 끝났나요?</span>
+              <button class="btn-done" onclick="setPeopleDone()">✅ 작업완료</button>
+            </div>
+          </div>`;
+      }
+
+      if (!html) {
+        html = `<div style="color:#bbb; font-size:13px; text-align:center; padding: 2rem 0;">알림이 없습니다</div>`;
+      }
+
+      notifList.innerHTML = html;
+    }
+
+    // 작업중 버튼 → people = 2
+    window.setPeopleWorking = async function () {
+      await updateDoc(cctvRef, { people: 2 });
+    };
+
+    // 작업완료 버튼 → people = 0
+    window.setPeopleDone = async function () {
+      await updateDoc(cctvRef, { people: 0 });
+    };
+
+    // ── 작업 재개 ──
+    window.resumeWork = async function() {
+      const snapshot = await getDoc(docRef);
+      if (!snapshot.exists()) return;
+      const data = snapshot.data();
+
+      const updates = {};
+      if ((data.plastic ?? 0) >= 24) updates.plastic = 0;
+      if ((data.paper   ?? 0) >= 24) updates.paper   = 0;
+      if ((data.can     ?? 0) >= 24) updates.can      = 0;
+
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(docRef, updates);
+        alert('작업이 재개되었습니다. 해당 항목이 초기화되었습니다.');
+      } else {
+        alert('작업이 재개되었습니다.');
+      }
+    };
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Noto Sans KR', sans-serif; background: #f5f6fa; display: flex; min-height: 100vh; }
+    .sidebar { width: 110px; background: #1a3a2a; display: flex; flex-direction: column; align-items: center; padding: 0 0 1rem; min-height: 100vh; flex-shrink: 0; }
+    .sidebar-logo { width: 100%; background: #16301f; padding: 1rem 0.5rem; display: flex; align-items: center; justify-content: center; gap: 6px; border-bottom: 1px solid #2a5c3a; text-decoration: none; cursor: pointer; transition: opacity 0.15s; }
+    .sidebar-logo:hover { opacity: 0.8; }
+    .sidebar-logo span { color: #fff; font-size: 12px; font-weight: 700; line-height: 1.3; text-align: center; }
+    .sidebar-logo .leaf { font-size: 18px; }
+    .sidebar-nav { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 1rem 0; width: 100%; flex: 1; }
+    .nav-item { width: 80px; padding: 10px 8px; border-radius: 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; text-decoration: none; transition: background 0.15s; }
+    .nav-item.active { background: #2d6a4f; }
+    .nav-item:hover:not(.active) { background: #24503b; }
+    .nav-item .icon { font-size: 20px; }
+    .nav-item span { color: #b7d9c5; font-size: 10px; font-weight: 500; text-align: center; line-height: 1.3; }
+    .nav-item.active span { color: #fff; }
+    .sidebar-bottom { margin-top: auto; }
+    .logout-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #b7d9c5; font-size: 10px; cursor: pointer; padding: 8px; background: none; border: none; font-family: inherit; }
+    .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .topbar { background: white; border-bottom: 1px solid #e8eaf0; padding: 0 1.5rem; height: 56px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+    .topbar-left { display: flex; align-items: center; }
+    .topbar-brand { color: #888; font-size: 13px; padding-right: 16px; border-right: 1px solid #e0e0e0; }
+    .topbar-page { color: #1a3a2a; font-size: 13px; font-weight: 600; padding-left: 16px; border-bottom: 2px solid #2d6a4f; padding-bottom: 2px; }
+    .topbar-right { display: flex; align-items: center; gap: 12px; }
+    .topbar-bell { font-size: 18px; position: relative; cursor: pointer; }
+    .bell-dot { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; background: #e74c3c; border-radius: 50%; }
+    .topbar-user { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .user-avatar { width: 30px; height: 30px; border-radius: 50%; background: #2d6a4f; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; }
+    .user-name { font-size: 13px; color: #333; font-weight: 500; }
+    .content { padding: 1.5rem; flex: 1; overflow-y: auto; }
+    .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; }
+    .page-title { font-size: 20px; font-weight: 700; color: #1a1a2e; margin-bottom: 4px; }
+    .page-subtitle { font-size: 13px; color: #888; }
+    .resume-btn { background: #da82b8; color: white; border: none; border-radius: 10px; padding: 0.7rem 1.4rem; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; font-family: inherit; box-shadow: 0 2px 8px rgba(124,111,205,0.3); transition: background 0.15s; }
+    .resume-btn:hover { background: #6a5dbb; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+    .grid-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .card { background: white; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 6px rgba(0,0,0,0.05); border: 1px solid #f0f0f5; }
+    .card-title { font-size: 14px; font-weight: 600; color: #333; margin-bottom: 1rem; display: flex; align-items: center; gap: 6px; }
+    .bin-layout { display: flex; align-items: center; gap: 1.5rem; }
+    .donut-wrap { position: relative; width: 120px; height: 120px; flex-shrink: 0; }
+    .donut-wrap svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+    .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
+    .donut-center .d-label { font-size: 10px; color: #888; }
+    .donut-center .d-val { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+    .bin-legend { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+    .bin-row { display: flex; align-items: center; gap: 10px; }
+    .bin-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .bin-label { font-size: 12px; color: #555; width: 48px; }
+    .bar-bg { flex: 1; height: 8px; background: #f0f0f5; border-radius: 10px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 10px; transition: width 0.6s ease; }
+    .bin-pct { font-size: 12px; color: #555; width: 32px; text-align: right; font-weight: 600; }
+    .log-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+    .log-item { background: #fffbf0; border-left: 3px solid #f59e0b; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #444; }
+    .log-conf { color: #C82D2D; font-weight: 600; }
+    .log-time { color: #bbb; float: right; font-size: 11px; }
+    .log-ask { margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .log-ask span { font-size: 12px; color: #666; }
+    .btn-yes { background: #d4edda; color: #1a7a40; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; }
+    .btn-yes:hover { background: #c3e6cb; }
+    .btn-no { background: #fde8e8; color: #c0392b; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; }
+    .btn-no:hover { background: #f5c6cb; }
+    .btn-working { background: #fff3cd; color: #856404; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; }
+    .btn-working:hover { background: #ffeeba; }
+    .btn-done { background: #d4edda; color: #1a7a40; border: none; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 12px; font-family: inherit; font-weight: 600; }
+    .btn-done:hover { background: #c3e6cb; }
+    .card-cctv { background: white; border-radius: 14px; padding: 1.25rem; box-shadow: 0 1px 6px rgba(0,0,0,0.05); border: 1px solid #f0f0f5; display: flex; flex-direction: column; }
+    .cctv-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; }
+    .cctv-title { font-size: 14px; font-weight: 600; color: #333; display: flex; align-items: center; gap: 6px; }
+    .cctv-live { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #2d9e5e; font-weight: 600; }
+    .cctv-dot { width: 8px; height: 8px; background: #2d9e5e; border-radius: 50%; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .peer-input-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .peer-input { flex: 1; border: 1px solid #e0e0e0; border-radius: 8px; padding: 7px 10px; font-size: 13px; outline: none; font-family: inherit; color: #333; }
+    .peer-input:focus { border-color: #2d6a4f; }
+    .peer-input::placeholder { color: #bbb; }
+    .peer-connect-btn { background: #da82b8; color: white; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; font-family: inherit; }
+    .peer-connect-btn:hover { background: #c96ea5; }
+    .peer-msg { font-size: 11px; color: #aaa; margin-bottom: 8px; }
+    .cctv-video { width: 100%; border-radius: 10px; background: #111; flex: 1; object-fit: cover; display: block; min-height: 200px; }
+    .resume-bar { display: none; }
+    .auto-badge { font-size: 10px; background: #e8f5ee; color: #2d6a4f; border-radius: 6px; padding: 2px 7px; font-weight: 600; margin-left: 6px; }
+    .peer-clear-btn { background: none; border: none; color: #bbb; font-size: 11px; cursor: pointer; padding: 4px 6px; border-radius: 6px; font-family: inherit; transition: color 0.15s; }
+    .peer-clear-btn:hover { color: #e74c3c; }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <a href="admin.html" class="sidebar-logo">
+      <img src="https://resonant-violet-tfxsbq9wle.edgeone.app/%EB%A1%9C%EA%B3%A03%20%EB%88%84%EB%81%BC.png"
+           alt="클린토피아" style="height:50px; width:auto; mix-blend-mode:screen;">
+    </a>
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="production.html">
+        <span class="icon">📋</span>
+        <span>발주·입고·<br>생산관리</span>
+      </a>
+      <a class="nav-item active" href="#">
+        <span class="icon">📁</span>
+        <span>관리</span>
+      </a>
+    </nav>
+    <div class="sidebar-bottom">
+      <button class="logout-btn">
+        <span style="font-size:18px;">🚪</span>
+        <span>로그아웃</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-brand">
+          <img src="https://resonant-violet-tfxsbq9wle.edgeone.app/%EB%A1%9C%EA%B3%A03%20%EB%88%84%EB%81%BC.png"
+               alt="클린토피아" style="height:28px; width:auto; vertical-align:middle; mix-blend-mode:multiply;">
+          클린토피아
+        </span>
+        <span class="topbar-page">&nbsp;&nbsp;관리</span>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-bell">🔔<div class="bell-dot"></div></div>
+        <div class="topbar-user">
+          <div class="user-avatar">관</div>
+          <span class="user-name">관리자 ▾</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="resume-bar">
+      <button class="resume-btn" id="orig-resume-btn" onclick="resumeWork()">▶ 작업 재개</button>
+      <p>현재 로봇이 일시정지 상태입니다.</p>
+    </div>
+
+    <div class="content">
+      <div class="page-header">
+        <div>
+          <div class="page-title">관리</div>
+          <div class="page-subtitle">로봇 상태, 분리수거 현황, CCTV, 알림을 관리하세요.</div>
+        </div>
+        <button class="resume-btn" onclick="resumeWork()">▶ 작업 재개</button>
+      </div>
+
+      <div class="grid">
+
+        <div class="card">
+          <div class="card-title">♻️ 분리수거통 현황</div>
+          <div class="bin-layout">
+            <div class="donut-wrap">
+              <svg viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e8eaf0" stroke-width="3.5"/>
+                <circle id="donut-plastic" cx="18" cy="18" r="15.9" fill="none" stroke="#043523" stroke-width="3.5"
+                  stroke-dasharray="26 74" stroke-dashoffset="0"/>
+                <circle id="donut-paper" cx="18" cy="18" r="15.9" fill="none" stroke="#167544" stroke-width="3.5"
+                  stroke-dasharray="15 85" stroke-dashoffset="-26"/>
+                <circle id="donut-can" cx="18" cy="18" r="15.9" fill="none" stroke="#2dc986" stroke-width="3.5"
+                  stroke-dasharray="30 70" stroke-dashoffset="-41"/>
+              </svg>
+              <div class="donut-center">
+                <div class="d-label">전체</div>
+                <div class="d-val" id="donut-val">—</div>
+              </div>
+            </div>
+            <div class="bin-legend">
+              <div class="bin-row">
+                <div class="bin-dot" style="background:#043523;"></div>
+                <span class="bin-label">플라스틱</span>
+                <div class="bar-bg">
+                  <div class="bar-fill" id="bar-plastic" style="width:0%;background:#043523;"></div>
+                </div>
+                <span class="bin-pct" id="pct-plastic">—</span>
+              </div>
+              <div class="bin-row">
+                <div class="bin-dot" style="background:#167544;"></div>
+                <span class="bin-label">종이</span>
+                <div class="bar-bg">
+                  <div class="bar-fill" id="bar-paper" style="width:0%;background:#167544;"></div>
+                </div>
+                <span class="bin-pct" id="pct-paper">—</span>
+              </div>
+              <div class="bin-row">
+                <div class="bin-dot" style="background:#2dc986;"></div>
+                <span class="bin-label">캔</span>
+                <div class="bar-bg">
+                  <div class="bar-fill" id="bar-can" style="width:0%;background:#2dc986;"></div>
+                </div>
+                <span class="bin-pct" id="pct-can">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔔 알림</div>
+          <div class="log-list" id="notification-list">
+            <div style="color:#bbb; font-size:13px; text-align:center; padding: 2rem 0;">알림이 없습니다</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="grid-bottom">
+
+        <div class="card-cctv">
+          <div class="cctv-header">
+            <div class="cctv-title">
+              📷 CCTV 1
+              <span class="auto-badge" id="auto-badge-1" style="display:none;">자동연결</span>
+            </div>
+            <div class="cctv-live"><div class="cctv-dot"></div> 연결됨</div>
+          </div>
+          <div class="peer-input-row">
+            <input class="peer-input" id="peerId1" placeholder="sender ID를 입력하세요" />
+            <button class="peer-connect-btn" onclick="connectPeer('cctv1', 'peerId1', 'msg1', 1)">연결</button>
+            <button class="peer-clear-btn" onclick="clearSaved(1)" title="저장된 ID 삭제">✕</button>
+          </div>
+          <div class="peer-msg" id="msg1">sender.html의 ID를 입력하세요</div>
+          <video id="cctv1" autoplay playsinline muted class="cctv-video"></video>
+        </div>
+
+        <div class="card-cctv">
+          <div class="cctv-header">
+            <div class="cctv-title">
+              📷 CCTV 2
+              <span class="auto-badge" id="auto-badge-2" style="display:none;">자동연결</span>
+            </div>
+            <div class="cctv-live"><div class="cctv-dot"></div> 연결됨</div>
+          </div>
+          <div class="peer-input-row">
+            <input class="peer-input" id="peerId2" placeholder="sender ID를 입력하세요" />
+            <button class="peer-connect-btn" onclick="connectPeer('cctv2', 'peerId2', 'msg2', 2)">연결</button>
+            <button class="peer-clear-btn" onclick="clearSaved(2)" title="저장된 ID 삭제">✕</button>
+          </div>
+          <div class="peer-msg" id="msg2">sender.html의 ID를 입력하세요</div>
+          <video id="cctv2" autoplay playsinline muted class="cctv-video"></video>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const peer = new Peer({ debug: 0 });
+
+    function connectPeer(videoId, inputId, msgId, num) {
+      const remotePeerId = document.getElementById(inputId).value.trim();
+      if (!remotePeerId) { alert('ID를 입력하세요!'); return; }
+      localStorage.setItem('cctv_peer_id_' + num, remotePeerId);
+      const badge = document.getElementById('auto-badge-' + num);
+      if (badge) badge.style.display = 'none';
+      document.getElementById(msgId).textContent = '연결 중...';
+      const call = peer.call(remotePeerId, getDummyStream());
+      call.on('stream', (remoteStream) => {
+        const video = document.getElementById(videoId);
+        video.srcObject = remoteStream;
+        video.play();
+        document.getElementById(msgId).textContent = '✅ 연결됨';
+      });
+      call.on('error', (err) => {
+        document.getElementById(msgId).textContent = '❌ 오류: ' + err.message;
+      });
+      call.on('close', () => {
+        document.getElementById(msgId).textContent = '🔌 연결 끊김';
+      });
+    }
+
+    function clearSaved(num) {
+      localStorage.removeItem('cctv_peer_id_' + num);
+      document.getElementById('peerId' + num).value = '';
+      document.getElementById('msg' + num).textContent = 'sender.html의 ID를 입력하세요';
+      const badge = document.getElementById('auto-badge-' + num);
+      if (badge) badge.style.display = 'none';
+      const video = document.getElementById('cctv' + num);
+      if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+    }
+
+    function getDummyStream() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1; canvas.height = 1;
+      return canvas.captureStream();
+    }
+
+    peer.on('open', () => {
+      [
+        { videoId: 'cctv1', inputId: 'peerId1', msgId: 'msg1', num: 1 },
+        { videoId: 'cctv2', inputId: 'peerId2', msgId: 'msg2', num: 2 }
+      ].forEach(({ videoId, inputId, msgId, num }) => {
+        const savedId = localStorage.getItem('cctv_peer_id_' + num);
+        if (savedId) {
+          document.getElementById(inputId).value = savedId;
+          const badge = document.getElementById('auto-badge-' + num);
+          if (badge) badge.style.display = 'inline';
+          connectPeer(videoId, inputId, msgId, num);
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

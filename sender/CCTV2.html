@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>카메라 송출 + 사람 인식</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, doc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAX8v-CpJc4tuV2BoBFARWJ7L3kaYRJT1U",
+      authDomain: "rokey-2.firebaseapp.com",
+      projectId: "rokey-2",
+      storageBucket: "rokey-2.firebasestorage.app",
+      messagingSenderId: "632237117523",
+      appId: "1:632237117523:web:eb4bd91a5e4e0be79f76a6",
+      measurementId: "G-SGKLQ50W2M"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const cctvRef = doc(db, "CCTV", "CCTV2");
+
+    window._currentPeople = 0;
+    window._voicePaused = false;
+    window._writing = false;
+    window._forceRecheck = false;
+
+    onSnapshot(cctvRef, (snapshot) => {
+      if (!snapshot.exists()) return;
+      const val = snapshot.data().people ?? 0;
+      const prev = window._currentPeople;
+      window._currentPeople = val;
+      window._voicePaused = (val === 2);
+
+      // 0→1 될 때 즉시 음성 재생 + 타이머 리셋
+      if (prev === 0 && val === 1) {
+        window._triggerVoice = true;
+      }
+
+      // 외부에서 0으로 바뀌면 감지 루프 재확인
+      if (prev !== 0 && val === 0) {
+        window._forceRecheck = true;
+      }
+    });
+
+    window._setPeople = async (val) => {
+      if (window._writing) return;
+      window._writing = true;
+      try {
+        await updateDoc(cctvRef, { people: val });
+      } catch (e) {
+        console.error("Firebase 업데이트 오류:", e);
+      } finally {
+        window._writing = false;
+      }
+    };
+  </script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+    :root {
+      --green: #00ff88;
+      --green-dim: #00cc66;
+      --red: #ff3355;
+      --bg: #080d0f;
+      --panel: #0d1517;
+      --border: #1a2e2a;
+      --text: #c8e6c9;
+      --mono: 'Share Tech Mono', monospace;
+      --sans: 'Rajdhani', sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.5rem;
+      gap: 1.2rem;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,255,136,0.015) 2px,
+        rgba(0,255,136,0.015) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .logo-dot {
+      width: 12px; height: 12px;
+      background: var(--green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 1.4s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+
+    h1 {
+      font-family: var(--mono);
+      font-size: 14px;
+      letter-spacing: 3px;
+      color: var(--green);
+      text-transform: uppercase;
+    }
+
+    .cam-time {
+      margin-left: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #446655;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+
+    .viewport::before {
+      content: 'CAM-01';
+      position: absolute;
+      top: 10px; left: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--green);
+      opacity: 0.6;
+      z-index: 10;
+    }
+
+    .viewport::after {
+      content: 'REC';
+      position: absolute;
+      top: 10px; right: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--red);
+      z-index: 10;
+    }
+
+    video#preview {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    canvas#overlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #loadingOverlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(8,13,15,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 20;
+      transition: opacity 0.5s;
+    }
+    #loadingOverlay.hidden { opacity: 0; pointer-events: none; }
+
+    .spinner {
+      width: 40px; height: 40px;
+      border: 2px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--green);
+      letter-spacing: 2px;
+    }
+
+    .stats-bar {
+      width: 100%;
+      max-width: 640px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 12px;
+    }
+
+    .stat-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #446655;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 20px;
+      color: var(--green);
+      line-height: 1;
+    }
+
+    .stat-value.alert { color: var(--red); text-shadow: 0 0 8px var(--red); }
+    .stat-value.warn  { color: #ffcc00; }
+
+    .voice-bar {
+      width: 100%;
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .voice-label {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #446655;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .voice-progress-bg {
+      flex: 1;
+      height: 6px;
+      background: var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .voice-progress-fill {
+      height: 100%;
+      background: var(--green-dim);
+      border-radius: 10px;
+      transition: width 1s linear;
+      width: 100%;
+    }
+    .voice-countdown {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--green);
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
+
+    .peer-panel {
+      width: 100%;
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .peer-id-block { flex: 1; min-width: 180px; }
+    .peer-id-label { font-size: 10px; letter-spacing: 2px; color: #446655; text-transform: uppercase; margin-bottom: 4px; }
+    .peer-id-val {
+      font-family: var(--mono);
+      font-size: 22px;
+      color: var(--green);
+      letter-spacing: 4px;
+    }
+
+    .copy-btn {
+      background: transparent;
+      border: 1px solid var(--green-dim);
+      color: var(--green);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding: 8px 16px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .copy-btn:hover { background: rgba(0,255,136,0.1); }
+
+    .conn-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #446655;
+    }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #446655; }
+    .conn-dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 1.4s infinite; }
+
+    .log-panel {
+      width: 100%;
+      max-width: 640px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px 14px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    .log-header {
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #446655;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+
+    .log-entry {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #557766;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(26,46,42,0.5);
+    }
+    .log-entry.detect { color: var(--green); }
+    .log-entry.alert  { color: var(--red); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="logo-dot"></div>
+    <h1>CCTV · 인체 감지 시스템</h1>
+    <div class="cam-time" id="clockEl">--:--:--</div>
+  </header>
+
+  <div class="viewport">
+    <div id="loadingOverlay">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">AI 모델 로딩 중...</div>
+    </div>
+    <video id="preview" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-label">감지 인원</div>
+      <div class="stat-value" id="countVal">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">최고 신뢰도</div>
+      <div class="stat-value" id="confVal">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">추론 FPS</div>
+      <div class="stat-value" id="fpsVal">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">상태</div>
+      <div class="stat-value" id="stateVal" style="font-size:13px;margin-top:4px">대기</div>
+    </div>
+  </div>
+
+  <div class="voice-bar">
+    <div class="voice-label">음성 알림</div>
+    <div class="voice-progress-bg">
+      <div class="voice-progress-fill" id="voiceFill"></div>
+    </div>
+    <div class="voice-countdown" id="voiceCountdown">2:00</div>
+  </div>
+
+  <div class="peer-panel">
+    <div class="peer-id-block">
+      <div class="peer-id-label">송출 ID</div>
+      <div class="peer-id-val" id="myId">…</div>
+    </div>
+    <button class="copy-btn" onclick="copyId()">[ ID 복사 ]</button>
+    <div class="conn-status">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="statusText">연결 대기 중</span>
+    </div>
+  </div>
+
+  <div class="log-panel">
+    <div class="log-header">// Detection Log</div>
+    <div id="logEntries"></div>
+  </div>
+
+  <script>
+    function updateClock() {
+      document.getElementById('clockEl').textContent =
+        new Date().toLocaleTimeString('ko-KR', { hour12: false });
+    }
+    setInterval(updateClock, 1000); updateClock();
+
+    function addLog(msg, type = '') {
+      const el = document.getElementById('logEntries');
+      const now = new Date().toLocaleTimeString('ko-KR', { hour12: false });
+      const div = document.createElement('div');
+      div.className = 'log-entry ' + type;
+      div.textContent = `[${now}] ${msg}`;
+      el.prepend(div);
+      if (el.children.length > 40) el.removeChild(el.lastChild);
+    }
+
+    let peer, localStream, model;
+    let frameCount = 0, lastFpsTime = performance.now();
+    let lastPersonCount = -1;
+    let detecting = false;
+
+    async function updateFirebasePeople(detectedCount) {
+      if (window._writing) return;
+      const current = window._currentPeople ?? 0;
+      if (detectedCount > 0 && current === 0) {
+        addLog('Firebase people → 1 (사람 감지)', 'alert');
+        await window._setPeople(1);
+      }
+      // 0으로 내리는 로직 제거 — people은 외부에서만 0으로 변경
+    }
+
+    // ── 음성 알림 ─────────────────────────────────────────
+    // people이 0→1 될 때 즉시 음성 + 타이머 리셋 후 2분마다 반복
+    // people이 2이면 타이머 정지, 0이면 타이머 정지(사람 없음)
+    const VOICE_INTERVAL = 2 * 60;
+    let voiceSecondsLeft = VOICE_INTERVAL;
+
+    function speakWarning() {
+      if (!window.speechSynthesis) return;
+      const utter = new SpeechSynthesisUtterance('로봇이 동작중일 수 있으니 주의하세요.');
+      utter.lang = 'ko-KR';
+      utter.rate = 0.95;
+      utter.pitch = 1;
+      window.speechSynthesis.speak(utter);
+      addLog('🔊 음성 알림 재생', 'detect');
+    }
+
+    function updateVoiceBar() {
+      const people = window._currentPeople ?? 0;
+      const active = (people === 1); // 1일 때만 카운트
+      const paused = (people === 2);
+      const pct = (voiceSecondsLeft / VOICE_INTERVAL) * 100;
+      document.getElementById('voiceFill').style.width = pct + '%';
+      document.getElementById('voiceFill').style.background =
+        paused ? '#446655' : active ? 'var(--green-dim)' : '#446655';
+      const m = Math.floor(voiceSecondsLeft / 60);
+      const s = voiceSecondsLeft % 60;
+      document.getElementById('voiceCountdown').textContent =
+        paused ? '일시정지' : active ? `${m}:${String(s).padStart(2, '0')}` : '대기중';
+    }
+
+    setInterval(() => {
+      // _triggerVoice: 0→1 전환 시 즉시 음성 + 타이머 리셋
+      if (window._triggerVoice) {
+        window._triggerVoice = false;
+        speakWarning();
+        voiceSecondsLeft = VOICE_INTERVAL;
+        updateVoiceBar();
+        return;
+      }
+
+      const people = window._currentPeople ?? 0;
+
+      if (people === 1) {
+        // 사람 있음 + 로봇 미작업: 카운트다운
+        voiceSecondsLeft--;
+        if (voiceSecondsLeft <= 0) {
+          speakWarning();
+          voiceSecondsLeft = VOICE_INTERVAL;
+        }
+      } else {
+        // people === 0 or 2: 타이머 리셋, 음성 없음
+        voiceSecondsLeft = VOICE_INTERVAL;
+      }
+
+      updateVoiceBar();
+    }, 1000);
+
+    updateVoiceBar();
+
+    async function init() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        const video = document.getElementById('preview');
+        video.srcObject = localStream;
+        await new Promise(r => video.onloadedmetadata = r);
+        resizeCanvas();
+        addLog('카메라 연결 완료');
+      } catch (e) {
+        addLog('카메라 오류: ' + e.message, 'alert');
+        alert('카메라 권한이 필요합니다: ' + e.message);
+        return;
+      }
+
+      document.getElementById('loadingText').textContent = 'AI 모델 로딩 중... (최초 1회)';
+      addLog('COCO-SSD 모델 로딩 중...');
+      try {
+        model = await cocoSsd.load({ base: 'mobilenet_v2' });
+        addLog('모델 로드 완료 ✓', 'detect');
+        document.getElementById('stateVal').textContent = '활성';
+      } catch (e) {
+        addLog('모델 로드 실패: ' + e.message, 'alert');
+      }
+
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      detectLoop();
+      initPeer();
+    }
+
+    function resizeCanvas() {
+      const video = document.getElementById('preview');
+      const canvas = document.getElementById('overlay');
+      canvas.width  = video.videoWidth  || video.clientWidth;
+      canvas.height = video.videoHeight || video.clientHeight;
+    }
+
+    async function detectLoop() {
+      if (!model) { requestAnimationFrame(detectLoop); return; }
+      if (detecting) return;
+      detecting = true;
+
+      const video  = document.getElementById('preview');
+      const canvas = document.getElementById('overlay');
+      const ctx    = canvas.getContext('2d');
+
+      if (canvas.width !== video.videoWidth && video.videoWidth > 0) resizeCanvas();
+
+      const predictions = await model.detect(video);
+      const people = predictions.filter(p => p.class === 'person' && p.score > 0.45);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      people.forEach((p, i) => {
+        const [x, y, w, h] = p.bbox;
+        const conf = Math.round(p.score * 100);
+
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth   = 2;
+        ctx.shadowColor = '#00ff88';
+        ctx.shadowBlur  = 8;
+        ctx.strokeRect(x, y, w, h);
+        ctx.shadowBlur  = 0;
+
+        const cLen = 14;
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth   = 3;
+        ctx.beginPath(); ctx.moveTo(x, y + cLen); ctx.lineTo(x, y); ctx.lineTo(x + cLen, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x+w-cLen, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+cLen); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y+h-cLen); ctx.lineTo(x, y+h); ctx.lineTo(x+cLen, y+h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x+w-cLen, y+h); ctx.lineTo(x+w, y+h); ctx.lineTo(x+w, y+h-cLen); ctx.stroke();
+
+        const label = `HUMAN ${String(i+1).padStart(2,'0')}  ${conf}%`;
+        ctx.font = '11px "Share Tech Mono", monospace';
+        const tw = ctx.measureText(label).width + 12;
+        ctx.fillStyle = 'rgba(0,20,12,0.85)';
+        ctx.fillRect(x, y - 20, tw, 18);
+        ctx.fillStyle = '#00ff88';
+        ctx.fillText(label, x + 6, y - 6);
+      });
+
+      if (people.length === 0) {
+        ctx.font = '11px "Share Tech Mono", monospace';
+        ctx.fillStyle = 'rgba(0,255,136,0.2)';
+        ctx.fillText('NO DETECTION', 10, canvas.height - 10);
+      }
+
+      const count = people.length;
+      document.getElementById('countVal').textContent = count;
+      document.getElementById('countVal').className = 'stat-value' + (count > 0 ? ' alert' : '');
+
+      if (count > 0) {
+        const maxConf = Math.max(...people.map(p => p.score));
+        document.getElementById('confVal').textContent = Math.round(maxConf * 100) + '%';
+      } else {
+        document.getElementById('confVal').textContent = '—';
+      }
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime > 1000) {
+        document.getElementById('fpsVal').textContent = frameCount;
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      if (window._forceRecheck) {
+        window._forceRecheck = false;
+        lastPersonCount = -1;
+        addLog('Firebase 외부 변경 감지 → 재확인', 'detect');
+      }
+
+      await updateFirebasePeople(count);
+
+      if (count !== lastPersonCount) {
+        if (count > 0 && lastPersonCount <= 0) {
+          addLog(`⚠ 사람 감지: ${count}명`, 'alert');
+        } else if (count === 0) {
+          addLog(`사람 ${lastPersonCount}명 → 0명`, '');
+        }
+        lastPersonCount = count;
+      }
+
+      detecting = false;
+      requestAnimationFrame(detectLoop);
+    }
+
+    function initPeer() {
+      peer = new Peer('CCTV2', { debug: 0 });
+
+      peer.on('open', (id) => {
+        document.getElementById('myId').textContent = id;
+        document.getElementById('connDot').classList.add('on');
+        document.getElementById('statusText').textContent = '대기 중';
+        addLog('PeerJS 연결됨: ' + id);
+      });
+
+      peer.on('error', (err) => {
+        document.getElementById('statusText').textContent = '오류';
+        addLog('PeerJS 오류: ' + err.message, 'alert');
+      });
+
+      peer.on('call', (call) => {
+        call.answer(localStream);
+        document.getElementById('statusText').textContent = '관리 페이지 연결됨 ✓';
+        addLog('관리 페이지 연결됨', 'detect');
+        call.on('close', () => {
+          document.getElementById('statusText').textContent = '대기 중';
+          addLog('관리 페이지 연결 끊김');
+        });
+      });
+    }
+
+    function copyId() {
+      const id = document.getElementById('myId').textContent;
+      navigator.clipboard.writeText(id).then(() => addLog('ID 복사됨: ' + id));
+    }
+
+    init();
+  </script>
+</body>
+</html>

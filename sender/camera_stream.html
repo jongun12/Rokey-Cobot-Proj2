@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>카메라 송출</title>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f8f9fb; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 24px; padding: 2rem; }
+
+    h2 { color: #47c839; font-size: 22px; }
+
+    .status-box { background: white; border-radius: 12px; border: 1px solid #eee; padding: 1.5rem 2rem; box-shadow: 0 1px 6px rgba(0,0,0,0.06); text-align: center; width: 100%; max-width: 420px; }
+
+    .id-label { font-size: 13px; color: #888; margin-bottom: 8px; }
+    .id-value { font-size: 28px; font-weight: 700; color: #2e7d32; letter-spacing: 4px; margin-bottom: 12px; min-height: 40px; }
+
+    .copy-btn { background: #47c839; color: white; border: none; border-radius: 8px; padding: 0.6rem 1.8rem; font-size: 14px; cursor: pointer; }
+    .copy-btn:hover { background: #2e7d32; }
+
+    .dot { display: inline-block; width: 10px; height: 10px; background: #ccc; border-radius: 50%; margin-right: 6px; }
+    .dot.on { background: #47c839; animation: blink 1.2s infinite; }
+    .dot.robot { background: #2196F3; animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .status-text { font-size: 13px; color: #666; margin-top: 14px; }
+    .robot-status { font-size: 13px; color: #666; margin-top: 8px; }
+
+    video { width: 100%; max-width: 420px; border-radius: 12px; background: #111; }
+    canvas { display: none; }
+
+    .conn-list { font-size: 13px; color: #444; margin-top: 10px; }
+    .conn-item { background: #e8f5e9; border-radius: 6px; padding: 4px 10px; display: inline-block; margin: 3px; }
+
+    .hint { font-size: 12px; color: #aaa; max-width: 420px; text-align: center; line-height: 1.6; }
+
+    #captureStatus { font-size: 13px; margin-top: 10px; color: #555; min-height: 20px; }
+  </style>
+</head>
+<body>
+
+  <h2>📤 카메라 송출</h2>
+
+  <video id="preview" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+
+  <div class="status-box">
+    <div class="id-label">이 ID를 관리 페이지에 입력하세요</div>
+    <div class="id-value" id="myId">연결 중...</div>
+    <button class="copy-btn" onclick="copyId()">📋 ID 복사</button>
+
+    <div class="status-text">
+      <span class="dot" id="peerDot"></span>
+      <span id="statusText">PeerJS 서버에 연결 중...</span>
+    </div>
+
+    <div class="robot-status">
+      <span class="dot" id="robotDot"></span>
+      <span id="robotText">로봇 서버 대기 중...</span>
+    </div>
+
+    <div class="conn-list" id="connList"></div>
+    <div id="captureStatus"></div>
+  </div>
+
+  <p class="hint">이 페이지를 열어두면 관리 페이지에서 영상을 볼 수 있어요.<br>창을 닫으면 연결이 끊깁니다.</p>
+
+  <script>
+    let peer;
+    let localStream;
+    let robotConnected = false;
+    let pollingStarted = false;
+
+    const ROBOT_SERVER = 'http://localhost:5050';
+
+    async function init() {
+      // 카메라 먼저
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        document.getElementById('preview').srcObject = localStream;
+      } catch(e) {
+        alert('카메라 권한이 필요해요: ' + e.message);
+        return;
+      }
+
+      // PeerJS 초기화
+      initPeer();
+
+      // 로봇 서버 연결 감지 (PeerJS와 별도로)
+      watchRobotServer();
+    }
+
+    function initPeer() {
+      peer = new Peer('CCTV1', { debug: 0 });
+
+      peer.on('open', (id) => {
+        document.getElementById('myId').textContent = id;
+        document.getElementById('peerDot').classList.add('on');
+        document.getElementById('statusText').textContent = '대기 중 — 관리 페이지에서 연결을 기다리는 중';
+      });
+
+      peer.on('error', (err) => {
+        document.getElementById('statusText').textContent = '오류: ' + err.type;
+      });
+
+      peer.on('call', (call) => {
+        call.answer(localStream);
+        call.on('close', () => { updateConnList(); });
+        updateConnList();
+        document.getElementById('statusText').textContent = '✅ 관리 페이지와 연결됨!';
+      });
+    }
+
+    // 로봇 서버가 켜지는지 주기적으로 확인 (에러 콘솔 안 뜨게)
+    async function watchRobotServer() {
+      while (true) {
+        try {
+          const res = await fetch(`${ROBOT_SERVER}/capture_ready`, { method: 'GET' });
+          if (res.ok) {
+            if (!robotConnected) {
+              robotConnected = true;
+              document.getElementById('robotDot').classList.add('robot');
+              document.getElementById('robotText').textContent = '✅ 로봇 서버 연결됨';
+
+              // 처음 연결됐을 때만 폴링 시작
+              if (!pollingStarted) {
+                pollingStarted = true;
+                pollCaptureRequest();
+              }
+            }
+          }
+        } catch(e) {
+          // 파이썬 꺼져있으면 조용히 무시 (콘솔 에러 없음)
+          if (robotConnected) {
+            robotConnected = false;
+            pollingStarted = false;
+            document.getElementById('robotDot').classList.remove('robot');
+            document.getElementById('robotText').textContent = '로봇 서버 대기 중...';
+          }
+        }
+        await sleep(2000);  // 2초마다 체크
+      }
+    }
+
+    // 실제 캡처 요청 폴링 (로봇 연결됐을 때만 실행)
+    async function pollCaptureRequest() {
+      while (robotConnected) {
+        try {
+          const res = await fetch(`${ROBOT_SERVER}/capture_ready`, { method: 'GET' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.requested) {
+              await captureAndSend();
+            }
+          }
+        } catch(e) {
+          break;  // 연결 끊기면 폴링 중단
+        }
+        await sleep(500);  // 0.5초마다 폴링
+      }
+      pollingStarted = false;
+    }
+
+    async function captureAndSend() {
+      const video    = document.getElementById('preview');
+      const canvas   = document.getElementById('canvas');
+      const statusEl = document.getElementById('captureStatus');
+
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+
+      canvas.toBlob(async (blob) => {
+        try {
+          statusEl.textContent = '📸 캡처 전송 중...';
+          const form = new FormData();
+          form.append('frame', blob, 'frame.jpg');
+          const res = await fetch(`${ROBOT_SERVER}/upload_frame`, {
+            method: 'POST',
+            body: form,
+          });
+          if (res.ok) {
+            statusEl.textContent = '✅ 전송 완료';
+          } else {
+            statusEl.textContent = '❌ 전송 실패';
+          }
+        } catch(e) {
+          statusEl.textContent = '❌ 서버 연결 실패';
+        }
+      }, 'image/jpeg', 0.95);
+    }
+
+    function updateConnList() {
+      const list = document.getElementById('connList');
+      const conns = peer ? Object.keys(peer.connections).filter(k => peer.connections[k].length > 0) : [];
+      if (conns.length === 0) {
+        list.innerHTML = '';
+      } else {
+        list.innerHTML = '연결된 관리 페이지: ' + conns.map(id => `<span class="conn-item">${id.slice(0,8)}...</span>`).join('');
+      }
+    }
+
+    function copyId() {
+      const id = document.getElementById('myId').textContent;
+      navigator.clipboard.writeText(id).then(() => alert('ID 복사됨!\n관리 페이지에 붙여넣기 하세요.'));
+    }
+
+    function sleep(ms) {
+      return new Promise(r => setTimeout(r, ms));
+    }
+
+    init();
+  </script>
+
+</body>
+</html>
